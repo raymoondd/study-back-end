@@ -1,4 +1,4 @@
-alert('AI Chatbot available soon');
+alert('AI Tutor available on May 1, 2026');
 
 
 document.addEventListener('DOMContentLoaded', () => {
