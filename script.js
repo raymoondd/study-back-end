@@ -1,3 +1,5 @@
+alert('The AI Tutor is still being developed. It’s not available yet—check back soon.');
+
 document.addEventListener('DOMContentLoaded', () => {
     // --- 1. STATE MANAGEMENT ---
     const defaultState = {
