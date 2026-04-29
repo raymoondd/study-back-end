@@ -1,26 +1,26 @@
-alert('AI Tutor available on May 1, 2026');
-
-
 document.addEventListener('DOMContentLoaded', () => {
     // --- 1. STATE MANAGEMENT ---
     const defaultState = {
         theme: 'dark',
         tasks: [],
-        noteTitle: '',
-        noteContent: '',
-        studyTime: 0, // in minutes
+        studyTime: 0,
         streak: 1,
         habits: [
             { id: 1, name: 'Drink Water', done: false },
             { id: 2, name: 'Read 10 pages', done: false },
-            { id: 3, name: 'Review Notes', done: false },
-            { id: 4, name: 'Study for MidTerm Exam', done: false },
-            { id: 5, name: 'Study for Final Exam', done: false }
+            { id: 3, name: 'Review Notes', done: false }
         ],
-        settings: { workDuration: 25, breakDuration: 5 }
+        settings: { 
+            workDuration: 25, 
+            breakDuration: 5,
+            apiKey: '' // For the Gemini AI
+        }
     };
 
     let appState = JSON.parse(localStorage.getItem('auraState')) || defaultState;
+
+    // Backward compatibility for old saves
+    if(!appState.settings.apiKey) appState.settings.apiKey = '';
 
     function saveState() {
         localStorage.setItem('auraState', JSON.stringify(appState));
@@ -31,9 +31,9 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         const loader = document.getElementById('loader');
         loader.style.opacity = '0';
-        setTimeout(() => loader.remove(), 500);
+        setTimeout(() => loader.remove(), 400);
         initApp();
-    }, 600); // Fake load for professional feel
+    }, 600);
 
     function initApp() {
         applyTheme(appState.theme);
@@ -41,13 +41,10 @@ document.addEventListener('DOMContentLoaded', () => {
         renderHabits();
         updateDashboardStats();
         
-        // Load Notes
-        document.getElementById('note-title').value = appState.noteTitle || '';
-        document.getElementById('note-content').value = appState.noteContent || '';
-
         // Load Settings
         document.getElementById('work-duration').value = appState.settings.workDuration;
         document.getElementById('break-duration').value = appState.settings.breakDuration;
+        document.getElementById('api-key-input').value = appState.settings.apiKey;
         
         setupProgressRing();
     }
@@ -61,22 +58,19 @@ document.addEventListener('DOMContentLoaded', () => {
         item.addEventListener('click', () => {
             const target = item.getAttribute('data-target');
             
-            // Update active nav class
             navItems.forEach(n => n.classList.remove('active'));
-            // Activate both desktop and mobile nav items matched
             document.querySelectorAll(`.nav-item[data-target="${target}"]`).forEach(n => n.classList.add('active'));
 
-            // Switch Page
             pages.forEach(p => p.classList.remove('active'));
             document.getElementById(target).classList.add('active');
 
-            // Update Title
-            pageTitle.innerText = item.querySelector('span') ? item.querySelector('span').innerText : target.charAt(0).toUpperCase() + target.slice(1);
+            const titleSpan = item.querySelector('span');
+            pageTitle.innerText = titleSpan ? titleSpan.innerText : target.charAt(0).toUpperCase() + target.slice(1);
         });
     });
 
     // --- 4. TOAST NOTIFICATIONS ---
-    function showToast(message) {
+    window.showToast = function(message) {
         const container = document.getElementById('toast-container');
         const toast = document.createElement('div');
         toast.className = 'toast';
@@ -86,7 +80,7 @@ document.addEventListener('DOMContentLoaded', () => {
             toast.style.opacity = '0';
             setTimeout(() => toast.remove(), 300);
         }, 3000);
-    }
+    };
 
     // --- 5. TASKS LOGIC ---
     const taskInput = document.getElementById('new-task-input');
@@ -102,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (filter === 'completed') filteredTasks = appState.tasks.filter(t => t.completed);
 
         if (filteredTasks.length === 0) {
-            taskList.innerHTML = `<div class="empty-state">No tasks found.</div>`;
+            taskList.innerHTML = `<div class="empty-state">No tasks here yet.</div>`;
             return;
         }
 
@@ -124,17 +118,11 @@ document.addEventListener('DOMContentLoaded', () => {
     addTaskBtn.addEventListener('click', () => {
         const text = taskInput.value.trim();
         if (!text) return;
-        const newTask = {
-            id: Date.now(),
-            text,
-            category: taskCategory.value,
-            completed: false
-        };
-        appState.tasks.push(newTask);
+        appState.tasks.push({ id: Date.now(), text, category: taskCategory.value, completed: false });
         taskInput.value = '';
         saveState();
         renderTasks(document.querySelector('.filter-btn.active').dataset.filter);
-        showToast('Task added successfully');
+        showToast('Task added');
     });
 
     window.toggleTask = (id) => {
@@ -159,131 +147,82 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // --- 6. NOTES & SMART SUMMARY ---
-   /* const noteTitleInput = document.getElementById('note-title');
-    const noteContentInput = document.getElementById('note-content');
-    
-    // Auto-save notes
-    const saveNotes = () => {
-        appState.noteTitle = noteTitleInput.value;
-        appState.noteContent = noteContentInput.value;
-        saveState();
-    };
-    noteTitleInput.addEventListener('input', saveNotes);
-    noteContentInput.addEventListener('input', saveNotes);
+    alert('AI Tutor available on May 1, 2026');
+    // --- 6. AI TUTOR LOGIC (GEMINI API) ---
+    const chatInput = document.getElementById('chat-input');
+    const chatSendBtn = document.getElementById('chat-send-btn');
+    const chatMessages = document.getElementById('chat-messages');
 
-    document.getElementById('summarize-btn').addEventListener('click', () => {
-        const text = noteContentInput.value.trim();
-        const summaryBox = document.getElementById('summary-box');
-        const summaryContent = document.getElementById('summary-content');
+    function appendMessage(text, sender) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `message ${sender}-msg`;
+        
+        // Basic Markdown-to-HTML parser for bold text returned by Gemini
+        let formattedText = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        formattedText = formattedText.replace(/\n/g, '<br>');
+        
+        msgDiv.innerHTML = formattedText;
+        chatMessages.appendChild(msgDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
 
-        if (!text) {
-            showToast("Write some notes first to summarize!");
+    async function handleChat() {
+        const message = chatInput.value.trim();
+        const apiKey = appState.settings.apiKey;
+
+        if (!message) return;
+        
+        appendMessage(message, 'user');
+        chatInput.value = '';
+
+        if (!apiKey) {
+            setTimeout(() => appendMessage('Please add your free Gemini API Key in the Settings tab to use the AI Tutor!', 'bot'), 500);
             return;
         }
 
-        // Basic JS Extraction Logic: Take first and last sentence, highlight keywords
-        let sentences = text.split('.').map(s => s.trim()).filter(s => s.length > 0);
-        let summaryText = "";
-        
-        if (sentences.length <= 2) {
-            summaryText = text;
-        } else {
-            summaryText = sentences[0] + ". ... " + sentences[sentences.length - 1] + ".";
+        appendMessage('<i class="ph ph-circle-notch ph-spin"></i> Thinking...', 'bot');
+        const loadingMsg = chatMessages.lastElementChild;
+
+        try {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: "You are a helpful and concise study tutor for a student. Answer this: " + message }] }]
+                })
+            });
+            
+            const data = await response.json();
+            loadingMsg.remove();
+
+            if(data.error) throw new Error(data.error.message);
+            
+            const reply = data.candidates[0].content.parts[0].text;
+            appendMessage(reply, 'bot');
+        } catch (error) {
+            loadingMsg.remove();
+            appendMessage(`Error: ${error.message || "Failed to connect to API. Is your key correct?"}`, 'bot');
         }
-
-        // Highlight Important Study Keywords
-        const keywords = ['important', 'key', 'remember', 'exam', 'concept', 'formula', 'definition', 'must'];
-        keywords.forEach(kw => {
-            const regex = new RegExp(`\\b${kw}\\b`, 'gi');
-            summaryText = summaryText.replace(regex, `<mark>$&</mark>`);
-        });
-
-        summaryContent.innerHTML = summaryText;
-        summaryBox.classList.remove('hidden');
-        showToast("Summary generated");
-    }); */
-
-
-    // --- NOTES & SMART SUMMARY ---
-const noteTitleInput = document.getElementById('note-title');
-const noteContentInput = document.getElementById('note-content');
-
-// Auto-save notes
-const saveNotes = () => {
-    appState.noteTitle = noteTitleInput.value;
-    appState.noteContent = noteContentInput.value;
-    saveState();
-};
-
-noteTitleInput.addEventListener('input', saveNotes);
-noteContentInput.addEventListener('input', saveNotes);
-
-// --- 5. SUMMARIZER LOGIC (Professional Refinement) ---
-const summarizeBtn = document.getElementById("summarize-btn");
-const summaryBox = document.getElementById("summary-box");
-const summaryContent = document.getElementById("summary-content");
-const noteContent = document.getElementById("note-content");
-
-summarizeBtn.addEventListener("click", () => {
-    const text = noteContent.value.trim();
-
-    if (text.length < 20) {
-        showToast("Please enter more text to summarize.");
-        return;
     }
 
-    // Show loading state on button
-    const originalBtnContent = summarizeBtn.innerHTML;
-    summarizeBtn.innerHTML = `<i class="ph ph-circle-notch animate-spin"></i> <span>Processing...</span>`;
-    summarizeBtn.disabled = true;
+    chatSendBtn.addEventListener('click', handleChat);
+    chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleChat(); });
 
-    // Simulate AI processing
-    setTimeout(() => {
-        // Logic: Get sentences, pick top ones
-        const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
-        const summaryCount = Math.max(1, Math.floor(sentences.length * 0.4));
-        let finalSummary = sentences.slice(0, summaryCount).join(" ");
-
-        // Professional Blue Highlighting Logic
-        // Highlight key academic terms to make it look "Smart"
-        const keywords = ['important', 'result', 'key', 'method', 'process', 'conclusion', 'system', 'data', 'significant'];
-        
-        keywords.forEach(kw => {
-            const regex = new RegExp(`\\b${kw}\\b`, 'gi');
-            finalSummary = finalSummary.replace(regex, `<mark>$&</mark>`);
-        });
-
-        // Update UI
-        summaryContent.innerHTML = finalSummary;
-        summaryBox.classList.remove("hidden");
-        
-        // Restore Button
-        summarizeBtn.innerHTML = originalBtnContent;
-        summarizeBtn.disabled = false;
-
-        // Smoothly scroll to the result so the user sees it immediately
-        summaryBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        
-        showToast("Summary generated!");
-    }, 1200);
-});
-
-
-    // --- 7. FOCUS MODE (POMODORO) ---
     // --- 7. FOCUS MODE (POMODORO) ---
     let timerInterval;
     let timeLeft = appState.settings.workDuration * 60;
     let isTimerRunning = false;
     let isWorkMode = true;
-    let breakMode = "auto"; // auto or manual
+    let breakMode = "auto";
     let pendingBreak = false;
 
     const timeDisplay = document.getElementById('time-display');
     const timerModeLabel = document.getElementById('timer-mode-label');
     const circle = document.querySelector('.progress-ring__circle');
-    const radius = circle.r.baseVal.value;
-    const circumference = radius * 2 * Math.PI;
+    
+    // Ensure svg rendering matches css bounds
+    let radius = 110; 
+    let circumference = radius * 2 * Math.PI;
 
     function setupProgressRing() {
         circle.style.strokeDasharray = `${circumference} ${circumference}`;
@@ -292,7 +231,7 @@ summarizeBtn.addEventListener("click", () => {
     }
 
     function setProgress(percent) {
-        const offset = circumference - percent / 100 * circumference;
+        const offset = circumference - (percent / 100) * circumference;
         circle.style.strokeDashoffset = offset;
     }
 
@@ -317,11 +256,13 @@ summarizeBtn.addEventListener("click", () => {
                 clearInterval(timerInterval);
                 isTimerRunning = false;
 
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                const osc = ctx.createOscillator();
-                osc.connect(ctx.destination);
-                osc.start();
-                setTimeout(() => osc.stop(), 500);
+                // Beep sound
+                try {
+                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    const osc = ctx.createOscillator();
+                    osc.connect(ctx.destination);
+                    osc.start(); setTimeout(() => osc.stop(), 500);
+                } catch(e) {}
 
                 if (isWorkMode) {
                     appState.studyTime += Number(appState.settings.workDuration);
@@ -331,11 +272,11 @@ summarizeBtn.addEventListener("click", () => {
                         isWorkMode = false;
                         timeLeft = Number(appState.settings.breakDuration) * 60;
                         timerModeLabel.innerText = "Break Session";
-                        showToast("Work done → Auto break started");
-                        document.getElementById('timer-start').click(); // Auto-continue
+                        showToast("Work done! Auto break started");
+                        document.getElementById('timer-start').click(); 
                     } else {
                         pendingBreak = true;
-                        showToast("Work done → Start break manually");
+                        showToast("Work done! Start your break manually.");
                         document.getElementById('timer-start').style.display = 'none';
                         document.getElementById('start-break-btn').style.display = 'block';
                     }
@@ -343,10 +284,8 @@ summarizeBtn.addEventListener("click", () => {
                     isWorkMode = true;
                     timeLeft = Number(appState.settings.workDuration) * 60;
                     timerModeLabel.innerText = "Work Session";
-                    showToast("Break finished → Back to focus");
-                    if (breakMode === "auto") {
-                         document.getElementById('timer-start').click();
-                    }
+                    showToast("Break over! Time to focus.");
+                    if (breakMode === "auto") document.getElementById('timer-start').click();
                 }
                 updateTimerDisplay();
             }
@@ -371,13 +310,11 @@ summarizeBtn.addEventListener("click", () => {
             document.querySelectorAll(".break-btn").forEach(b => b.classList.remove("active"));
             btn.classList.add("active");
             breakMode = btn.dataset.break;
-            showToast(`Break mode: ${breakMode === 'auto' ? 'Auto' : 'Manual'}`);
         });
     });
 
     document.getElementById("start-break-btn").addEventListener("click", () => {
         if (!pendingBreak) return;
-
         isWorkMode = false;
         timeLeft = Number(appState.settings.breakDuration) * 60;
         timerModeLabel.innerText = "Break Session";
@@ -386,21 +323,17 @@ summarizeBtn.addEventListener("click", () => {
         document.getElementById('start-break-btn').style.display = 'none';
         document.getElementById('timer-start').style.display = 'block';
         updateTimerDisplay();
-        document.getElementById('timer-start').click(); // Trigger it instantly
-        showToast("Break started");
+        document.getElementById('timer-start').click();
     });
 
-    // --- 8. DASHBOARD & HABITS ---
+    // --- 8. DASHBOARD STATS ---
     function renderHabits() {
         const list = document.getElementById('habit-list');
         list.innerHTML = '';
         appState.habits.forEach(habit => {
             const div = document.createElement('div');
             div.className = `habit-item ${habit.done ? 'done' : ''}`;
-            div.innerHTML = `
-                <div class="habit-checkbox"></div>
-                <span>${habit.name}</span>
-            `;
+            div.innerHTML = `<div class="habit-checkbox"></div><span>${habit.name}</span>`;
             div.addEventListener('click', () => {
                 habit.done = !habit.done;
                 saveState();
@@ -418,15 +351,113 @@ summarizeBtn.addEventListener("click", () => {
         document.getElementById('dash-tasks').innerText = `${completedTasks}`;
         document.getElementById('dash-streak').innerText = `${appState.streak} days`;
 
-        // Progress Bar
         const fill = document.getElementById('task-progress-fill');
         const percentage = totalTasks === 0 ? 0 : (completedTasks / totalTasks) * 100;
         fill.style.width = `${percentage}%`;
     }
 
-    // --- 9. SETTINGS ---
+    // --- 9. MUSIC PLAYER (INDEXED DB) ---
+    const musicUpload = document.getElementById('music-upload');
+    const audioPlayer = document.getElementById('audio-player');
+    const playlist = document.getElementById('playlist');
+    const playBtn = document.getElementById("play-btn");
+    const nextBtn = document.getElementById("next-btn");
+    const prevBtn = document.getElementById("prev-btn");
+    const shuffleBtn = document.getElementById("shuffle-btn");
+    const progressBar = document.getElementById("progress-bar");
+    const nowPlaying = document.getElementById("now-playing");
+
+    let db, currentSongs = [], currentIndex = 0, isShuffle = false;
+
+    const request = indexedDB.open("StudyMusicDB", 1);
+    request.onupgradeneeded = (e) => {
+        db = e.target.result;
+        db.createObjectStore("songs", { keyPath: "id", autoIncrement: true });
+    };
+    request.onsuccess = (e) => {
+        db = e.target.result;
+        loadSongs();
+    };
+
+    musicUpload.addEventListener("change", (e) => {
+        const files = e.target.files;
+        const tx = db.transaction("songs", "readwrite");
+        const store = tx.objectStore("songs");
+
+        for (let file of files) {
+           store.add({ name: file.name, file: file.slice(0, file.size, file.type) });
+        }
+        tx.oncomplete = () => { showToast("Music imported!"); loadSongs(); };
+    });
+
+    function loadSongs() {
+        playlist.innerHTML = "";
+        const tx = db.transaction("songs", "readonly");
+        const req = tx.objectStore("songs").getAll();
+
+        req.onsuccess = () => {
+            currentSongs = req.result;
+            currentSongs.forEach((song, index) => {
+                const item = document.createElement("div");
+                item.className = "playlist-item";
+                item.setAttribute("data-index", index);
+                item.innerHTML = `
+                    <span>${song.name}</span>
+                    <div class="song-actions">
+                        <button class="play-btn">Play</button>
+                        <button class="del-btn" onclick="deleteSong(${song.id})"><i class="ph ph-trash"></i></button>
+                    </div>
+                `;
+                item.querySelector(".play-btn").addEventListener("click", () => playSong(index));
+                playlist.appendChild(item);
+            });
+        };
+    }
+
+    window.deleteSong = function(id) {
+        const tx = db.transaction("songs", "readwrite");
+        tx.objectStore("songs").delete(id);
+        tx.oncomplete = () => { showToast("Song deleted"); loadSongs(); };
+    };
+
+    function playSong(index) {
+        if (!currentSongs.length) return;
+        currentIndex = index;
+        const song = currentSongs[index];
+        audioPlayer.src = URL.createObjectURL(song.file);
+        audioPlayer.play();
+        playBtn.innerHTML = '<i class="ph ph-pause"></i>';
+        nowPlaying.innerText = "Now Playing: " + song.name;
+
+        document.querySelectorAll(".playlist-item").forEach(item => item.classList.remove("active"));
+        document.querySelector(`[data-index="${index}"]`)?.classList.add("active");
+    }
+
+    playBtn.addEventListener("click", () => {
+        if (!audioPlayer.src && currentSongs.length > 0) return playSong(0);
+        if (audioPlayer.paused) {
+            audioPlayer.play();
+            playBtn.innerHTML = '<i class="ph ph-pause"></i>';
+        } else {
+            audioPlayer.pause();
+            playBtn.innerHTML = '<i class="ph ph-play"></i>';
+        }
+    });
+
+    nextBtn.addEventListener("click", () => playSong(isShuffle ? Math.floor(Math.random() * currentSongs.length) : (currentIndex + 1) % currentSongs.length));
+    prevBtn.addEventListener("click", () => playSong(currentIndex > 0 ? currentIndex - 1 : currentSongs.length - 1));
+    shuffleBtn.addEventListener("click", () => {
+        isShuffle = !isShuffle;
+        shuffleBtn.style.color = isShuffle ? 'var(--primary-color)' : 'var(--text-primary)';
+        showToast(isShuffle ? "Shuffle ON" : "Shuffle OFF");
+    });
+
+    audioPlayer.addEventListener("ended", () => nextBtn.click());
+    audioPlayer.addEventListener("timeupdate", () => { progressBar.value = (audioPlayer.currentTime / audioPlayer.duration) * 100 || 0; });
+    progressBar.addEventListener("input", () => { audioPlayer.currentTime = (progressBar.value / 100) * audioPlayer.duration; });
+
+    // --- 10. SETTINGS ---
     const themeToggleBtn = document.getElementById('theme-toggle');
-    
     function applyTheme(theme) {
         document.documentElement.setAttribute('data-theme', theme);
         themeToggleBtn.innerHTML = theme === 'dark' ? '<i class="ph ph-sun"></i>' : '<i class="ph ph-moon"></i>';
@@ -438,304 +469,29 @@ summarizeBtn.addEventListener("click", () => {
         saveState();
     });
 
+    document.getElementById('api-key-input').addEventListener('change', (e) => {
+        appState.settings.apiKey = e.target.value.trim();
+        saveState();
+        showToast("API Key Saved!");
+    });
+
     document.getElementById('work-duration').addEventListener('change', (e) => {
         appState.settings.workDuration = e.target.value;
-        if(isWorkMode && !isTimerRunning) {
-            Number(e.target.value)
-            updateTimerDisplay();
-        }
+        if(isWorkMode && !isTimerRunning) { timeLeft = e.target.value * 60; updateTimerDisplay(); }
         saveState();
     });
 
     document.getElementById('break-duration').addEventListener('change', (e) => {
         appState.settings.breakDuration = e.target.value;
-        if(!isWorkMode && !isTimerRunning) {
-            Number(e.target.value)
-            updateTimerDisplay();
-        }
+        if(!isWorkMode && !isTimerRunning) { timeLeft = e.target.value * 60; updateTimerDisplay(); }
         saveState();
     });
 
     document.getElementById('reset-data-btn').addEventListener('click', () => {
-        if(confirm("Are you sure you want to delete all your data? This cannot be undone.")) {
+        if(confirm("Delete all data? This cannot be undone.")) {
             localStorage.removeItem('auraState');
-            location.reload(); // Reload to reset cleanly
+            indexedDB.deleteDatabase('StudyMusicDB');
+            location.reload();
         }
     });
 });
-
-
-//Normal music
-/*
-const musicUpload = document.getElementById('music-upload');
-const audioPlayer = document.getElementById('audio-player');
-const playlist = document.getElementById('playlist');
-
-
-
-let musicList = [];
-
-// upload music
-musicUpload.addEventListener('change', (e) => {
-    const files = e.target.files;
-
-    for (let file of files) {
-        const url = URL.createObjectURL(file);
-
-        musicList.push({
-            name: file.name,
-            url: url
-        });
-    }
-
-    renderPlaylist();
-    showToast("Music added");
-});
-
-// render list
-function renderPlaylist() {
-    playlist.innerHTML = "";
-
-    musicList.forEach((track, i) => {
-        const div = document.createElement("div");
-        div.classList.add("playlist-item");
-
-        div.innerHTML = `
-            <span>${track.name}</span>
-            <button class="play-btn">Play</button>
-        `;
-
-        div.querySelector(".play-btn").addEventListener("click", () => {
-            audioPlayer.src = track.url;
-            audioPlayer.play();
-        });
-
-        playlist.appendChild(div);
-    });
-}
-
-// your existing music code above...
-
-function playMusic(index) {
-    audioPlayer.src = musicList[index].url;
-    audioPlayer.play();
-    showToast("Now playing: " + musicList[index].name);
-}
-
-// ✅ PUT THIS RIGHT AFTER playMusic()
-audioPlayer.addEventListener("ended", () => {
-    let currentIndex = musicList.findIndex(song =>
-        audioPlayer.src.includes(song.url)
-    );
-
-    let nextIndex = currentIndex + 1;
-
-    if (nextIndex < musicList.length) {
-        playMusic(nextIndex);
-    }
-}); */
-
-const musicUpload = document.getElementById('music-upload');
-const audioPlayer = document.getElementById('audio-player');
-const playlist = document.getElementById('playlist');
-const playBtn = document.getElementById("play-btn");
-const nextBtn = document.getElementById("next-btn");
-const prevBtn = document.getElementById("prev-btn");
-const shuffleBtn = document.getElementById("shuffle-btn");
-const progressBar = document.getElementById("progress-bar");
-const nowPlaying = document.getElementById("now-playing");
-
-let db;
-let currentSongs = [];
-let currentIndex = 0;
-let isShuffle = false;
-
-// ---------------- DB ----------------
-const request = indexedDB.open("AuraMusicDB", 1);
-
-request.onupgradeneeded = (e) => {
-    db = e.target.result;
-    db.createObjectStore("songs", { keyPath: "id", autoIncrement: true });
-};
-
-request.onsuccess = (e) => {
-    db = e.target.result;
-    loadSongs();
-};
-
-// ---------------- UPLOAD ----------------
-musicUpload.addEventListener("change", (e) => {
-    const files = e.target.files;
-    const tx = db.transaction("songs", "readwrite");
-    const store = tx.objectStore("songs");
-
-    for (let file of files) {
-       store.add({
-            name: file.name,
-            file: file.slice(0, file.size, file.type)
-        });
-    }
-
-    tx.oncomplete = () => {
-        showToast("Music saved");
-        loadSongs();
-    };
-});
-
-// ---------------- LOAD SONGS ----------------
-// ---------------- LOAD SONGS ----------------
-function loadSongs() {
-    playlist.innerHTML = "";
-    const tx = db.transaction("songs", "readonly");
-    const store = tx.objectStore("songs");
-    const req = store.getAll();
-
-    req.onsuccess = () => {
-        currentSongs = req.result;
-
-        currentSongs.forEach((song, index) => {
-            const item = document.createElement("div");
-            item.classList.add("playlist-item");
-            item.setAttribute("data-index", index);
-
-            item.innerHTML = `
-                <span class="song-title">${song.name}</span>
-                <div class="song-actions">
-                    <button class="play-btn">Play</button>
-                    <button class="del-song-btn" onclick="deleteSong(${song.id})"><i class="ph ph-trash"></i></button>
-                </div>
-            `;
-
-            const playBtn = item.querySelector(".play-btn");
-
-            playBtn.addEventListener("click", () => {
-                playSong(index);
-                setActiveSongUI(index);
-            });
-
-            playlist.appendChild(item);
-        });
-    };
-}
-
-// ---------------- DELETE SONG ----------------
-window.deleteSong = function(id) {
-    const tx = db.transaction("songs", "readwrite");
-    const store = tx.objectStore("songs");
-    store.delete(id);
-    
-    tx.oncomplete = () => {
-        showToast("Song deleted");
-        loadSongs(); // Refresh list immediately
-    };
-};
-
-function setActiveSongUI(index) {
-    document.querySelectorAll(".playlist-item").forEach(item => {
-        item.classList.remove("active");
-    });
-
-    const activeItem = document.querySelector(`[data-index="${index}"]`);
-    if (activeItem) {
-        activeItem.classList.add("active");
-    }
-}
-
-// ---------------- PLAY SONG ----------------
-function playSong(index) {
-    if (!currentSongs.length) return;
-
-    currentIndex = index;
-
-    const song = currentSongs[index];
-    const url = URL.createObjectURL(song.file);
-
-    audioPlayer.src = url;
-    audioPlayer.play();
-
-    setActiveSongUI(index); // 👈 ADD THIS
-
-    showToast("Now playing: " + song.name);
-}
-
-// ---------------- CONTROLS ----------------
-playBtn.addEventListener("click", () => {
-    // if nothing selected yet, start first song
-    if (!audioPlayer.src && currentSongs.length > 0) {
-        playSong(0);
-        return;
-    }
-
-    // normal play/pause toggle
-    if (audioPlayer.paused) {
-        audioPlayer.play();
-        playBtn.textContent = "⏸";
-    } else {
-        audioPlayer.pause();
-        playBtn.textContent = "▶";
-    }
-});
-nextBtn.addEventListener("click", () => {
-    if (isShuffle) {
-        playSong(getRandomIndex());
-    } else if (currentIndex < currentSongs.length - 1) {
-        playSong(currentIndex + 1);
-    }
-});
-
-prevBtn.addEventListener("click", () => {
-    if (currentIndex > 0) {
-        playSong(currentIndex - 1);
-    }
-});
-
-// ---------------- SHUFFLE ----------------
-shuffleBtn.addEventListener("click", () => {
-    isShuffle = !isShuffle;
-    showToast(isShuffle ? "Shuffle ON" : "Shuffle OFF");
-});
-
-function getRandomIndex() {
-    return Math.floor(Math.random() * currentSongs.length);
-}
-
-// ---------------- AUTO NEXT ----------------
-audioPlayer.addEventListener("ended", () => {
-    if (!currentSongs.length) return;
-
-    if (isShuffle) {
-        playSong(getRandomIndex());
-    } else {
-        if (currentIndex < currentSongs.length - 1) {
-            playSong(currentIndex + 1);
-        }
-    }
-});
-
-// ---------------- PROGRESS ----------------
-audioPlayer.addEventListener("timeupdate", () => {
-    progressBar.value =
-        (audioPlayer.currentTime / audioPlayer.duration) * 100 || 0;
-});
-
-progressBar.addEventListener("input", () => {
-    audioPlayer.currentTime =
-        (progressBar.value / 100) * audioPlayer.duration;
-});
-
-function syncTimerToSettings() {
-    if (isTimerRunning) return;
-
-    if (isWorkMode) {
-        timeLeft = Number(appState.settings.workDuration) * 60;
-    } else {
-        timeLeft = Number(appState.settings.breakDuration) * 60;
-    }
-
-    updateTimerDisplay();
-}
-
-function contactme() {
-    window.open("https://forms.gle/GMX5npeeqc2Qdu6SA", "_blank", "noopener,noreferrer");
-}
-
