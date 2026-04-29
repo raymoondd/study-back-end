@@ -175,7 +175,8 @@ document.addEventListener('DOMContentLoaded', () => {
         chatInput.value = '';
 
         if (!apiKey) {
-            setTimeout(() => appendMessage('Please add your free Gemini API Key in the Settings tab to use the AI Tutor!', 'bot'), 500);
+            //setTimeout(() => appendMessage('Please add your free Gemini API Key in the Settings tab to use the AI Tutor!', 'bot'), 500);
+            setTimeout(() => appendMessage('The AI Tutor is still being developed. It’s not available yet—check back soon.', 'bot'), 500);
             return;
         }
 
