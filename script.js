@@ -188,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    contents: [{ parts: [{ text: "You are a helpful and concise study tutor for a student. Answer this: " + message }] }]
+                    //contents: [{ parts: [{ text: "You are a helpful and concise study tutor for a student. Answer this: " + message }] }]
                 })
             });
             
@@ -201,7 +201,7 @@ document.addEventListener('DOMContentLoaded', () => {
             appendMessage(reply, 'bot');
         } catch (error) {
             loadingMsg.remove();
-            appendMessage(`Error: ${error.message || "Failed to connect to API. Is your key correct?"}`, 'bot');
+            //appendMessage(`Error: ${error.message || "Failed to connect to API. Is your key correct?"}`, 'bot');
         }
     }
 
