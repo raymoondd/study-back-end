@@ -174,8 +174,9 @@ document.addEventListener('DOMContentLoaded', () => {
         appendMessage(message, 'user');
         chatInput.value = '';
 
+        //setTimeout(() => appendMessage('Please add your free Gemini API Key in the Settings tab to use the AI Tutor!', 'bot'), 500);
+
         if (!apiKey) {
-            //setTimeout(() => appendMessage('Please add your free Gemini API Key in the Settings tab to use the AI Tutor!', 'bot'), 500);
             setTimeout(() => appendMessage('The AI Tutor is still being developed. It’s not available yet—check back soon.', 'bot'), 500);
             return;
         }
@@ -188,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    //contents: [{ parts: [{ text: "You are a helpful and concise study tutor for a student. Answer this: " + message }] }]
+                    contents: [{ parts: [{ text: "You are a helpful and concise study tutor for a student. Answer this: " + message }] }]
                 })
             });
             
@@ -201,7 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
             appendMessage(reply, 'bot');
         } catch (error) {
             loadingMsg.remove();
-            //appendMessage(`Error: ${error.message || "Failed to connect to API. Is your key correct?"}`, 'bot');
+            appendMessage(`Error: ${error.message || "Failed to connect to API. Is your key correct?"}`, 'bot');
         }
     }
 
