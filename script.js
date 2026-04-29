@@ -147,7 +147,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    alert('AI Tutor available on May 1, 2026');
     // --- 6. AI TUTOR LOGIC (GEMINI API) ---
     const chatInput = document.getElementById('chat-input');
     const chatSendBtn = document.getElementById('chat-send-btn');
