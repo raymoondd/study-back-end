@@ -2,23 +2,20 @@ require('dotenv').config();
 const express = require('express');
 const OpenAI = require('openai'); 
 const cors = require('cors');
-const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
 
-// Initialize OpenAI client pointing to OpenRouter
+app.get('/', (req, res) => {
+    res.send('StudyFlow backend is running');
+});
+
 const openai = new OpenAI({
     apiKey: process.env.OPENROUTER_API_KEY,
     baseURL: "https://openrouter.ai/api/v1",
-    defaultHeaders: {
-        "HTTP-Referer": "http://localhost:3000", // Optional, for OpenRouter rankings
-        "X-Title": "StudyFlow AI Tutor",         // Optional
-    }
 });
 
 app.post('/api/chat', async (req, res) => {
@@ -28,23 +25,21 @@ app.post('/api/chat', async (req, res) => {
 
     try {
         const response = await openai.chat.completions.create({
-            model: "openai/gpt-3.5-turbo", // Note the "openai/" prefix for OpenRouter
+            model: "openai/gpt-3.5-turbo",
             messages: [
                 { role: "system", content: "You are a helpful AI Study Tutor." },
                 { role: "user", content: message }
             ],
         });
 
-        const reply = response.choices[0].message.content;
-        res.json({ reply });
+        res.json({ reply: response.choices[0].message.content });
 
     } catch (error) {
-        // Log the exact error to your VS Code terminal
-        console.error("OpenRouter Error:", error.message); 
-        res.status(500).json({ reply: "I'm having trouble thinking. Check your OpenRouter key and balance." });
+        console.error("OpenRouter Error:", error.message);
+        res.status(500).json({ reply: "Error from AI service." });
     }
 });
 
 app.listen(port, () => {
-    console.log(`🚀 Server running at: http://localhost:${port}`);
+    console.log(`Server running on port ${port}`);
 });
